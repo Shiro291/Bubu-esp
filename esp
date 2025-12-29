@@ -1,0 +1,469 @@
+-- [ Configuration ] --
+local NPC_FOLDER = workspace.Map.Zones.Field.NPC
+
+-- Define your data here
+local RARITY_OPTIONS = {
+    "Show All", "Common", "Uncommon", "Rare", "Epic", 
+    "Legendary", "Mythic", "God", "Secret", "Exclusive"
+}
+
+local MUTATION_OPTIONS = {
+    "Show All", "Normal", "Gold", "Diamond", "Rainbow", 
+    "Bloodmoon", "Galaxy", "Radioactive"
+}
+-- --------------------
+
+local Players = game:GetService("Players")
+local Player = Players.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
+
+-- State Management
+local Settings = {
+    SelectedRarities = {},
+    SelectedMutations = {},
+    Mode = "AND" -- "AND" or "OR"
+}
+
+-- Storage for tagged NPCs
+local TrackedNPCs = {}
+
+-- ==========================================
+-- UI GENERATION SYSTEM
+-- ==========================================
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "NPCFilterGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = PlayerGui
+
+-- Main Container
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 250, 0, 350)
+MainFrame.Position = UDim2.new(0.5, -125, 0.5, -175) -- Center screen
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+MainFrame.BorderSizePixel = 0
+MainFrame.Parent = ScreenGui
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
+Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(255, 255, 255)
+Instance.new("UIStroke", MainFrame).Thickness = 1
+
+-- Dragging Logic
+local dragging, dragInput, dragStart, startPos
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+MainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        dragInput = input
+    end
+end)
+game:GetService("UserInputService").InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- Top Bar (Title + Minimize)
+local TopBar = Instance.new("Frame")
+TopBar.Name = "TopBar"
+TopBar.Size = UDim2.new(1, 0, 0, 40)
+TopBar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+TopBar.Parent = MainFrame
+Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 8)
+
+local Title = Instance.new("TextLabel")
+Title.Name = "Title"
+Title.Size = UDim2.new(1, -40, 1, 0)
+Title.Position = UDim2.new(0, 10, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "NPC Filter"
+Title.TextColor3 = Color3.white
+Title.TextSize = 18
+Title.Font = Enum.Font.GothamBold
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = TopBar
+
+local MinimizeBtn = Instance.new("TextButton")
+MinimizeBtn.Name = "MinimizeBtn"
+MinimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+MinimizeBtn.Position = UDim2.new(1, -35, 0.5, -15)
+MinimizeBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+MinimizeBtn.Text = "-"
+MinimizeBtn.TextColor3 = Color3.white
+MinimizeBtn.TextSize = 20
+MinimizeBtn.Font = Enum.Font.GothamBold
+MinimizeBtn.Parent = TopBar
+Instance.new("UICorner", MinimizeBtn).CornerRadius = UDim.new(0, 4)
+Instance.new("UIStroke", MinimizeBtn).Color = Color3.fromRGB(100,100,100)
+Instance.new("UIStroke", MinimizeBtn).Thickness = 1
+
+-- Content Frame
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Name = "Content"
+ContentFrame.Size = UDim2.new(1, -20, 1, -50)
+ContentFrame.Position = UDim2.new(0, 10, 0, 45)
+ContentFrame.BackgroundTransparency = 1
+ContentFrame.Parent = MainFrame
+
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Padding = UDim.new(0, 10)
+UIListLayout.Parent = ContentFrame
+
+-- Minimized Icon
+local MinimizedIcon = Instance.new("TextButton")
+MinimizedIcon.Name = "MinimizedIcon"
+MinimizedIcon.Size = UDim2.new(0, 50, 0, 50)
+MinimizedIcon.Position = UDim2.new(0.5, -25, 0.5, -25)
+MinimizedIcon.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+MinimizedIcon.Text = "NPC"
+MinimizedIcon.TextColor3 = Color3.white
+MinimizedIcon.Visible = false
+MinimizedIcon.Parent = ScreenGui
+Instance.new("UICorner", MinimizedIcon).CornerRadius = UDim.new(0, 8)
+Instance.new("UIStroke", MinimizedIcon).Color = Color3.fromRGB(255,255,255)
+
+local function toggleGui()
+    if MainFrame.Visible then
+        MainFrame.Visible = false
+        MinimizedIcon.Visible = true
+    else
+        MainFrame.Visible = true
+        MinimizedIcon.Visible = false
+    end
+end
+MinimizeBtn.MouseButton1Click:Connect(toggleGui)
+MinimizedIcon.MouseButton1Click:Connect(toggleGui)
+
+-- Dropdown Creator
+local function createDropdown(title, options, typeStr)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 0, 30)
+    container.BackgroundTransparency = 1
+    container.Parent = ContentFrame
+
+    local btn = Instance.new("TextButton")
+    btn.Name = "DropdownBtn"
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    btn.Text = title .. ": Show All"
+    btn.TextColor3 = Color3.white
+    btn.TextSize = 14
+    btn.Font = Enum.Font.Gotham
+    btn.TextXAlignment = Enum.TextXAlignment.Left
+    btn.Parent = container
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 4)
+    btnCorner.Parent = btn
+    local btnPad = Instance.new("UIPadding")
+    btnPad.PaddingLeft = UDim.new(0, 10)
+    btnPad.Parent = btn
+
+    local arrow = Instance.new("TextLabel")
+    arrow.Size = UDim2.new(0, 20, 1, 0)
+    arrow.Position = UDim2.new(1, -25, 0, 0)
+    arrow.BackgroundTransparency = 1
+    arrow.Text = "v"
+    arrow.TextColor3 = Color3.white
+    arrow.Parent = btn
+
+    local list = Instance.new("ScrollingFrame")
+    list.Name = "List"
+    list.Size = UDim2.new(1, 0, 0, 150)
+    list.Position = UDim2.new(0, 0, 1, 5)
+    list.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    list.BorderSizePixel = 0
+    list.ScrollBarThickness = 4
+    list.Visible = false
+    list.Parent = container
+    local listCorner = Instance.new("UICorner")
+    listCorner.CornerRadius = UDim.new(0, 4)
+    listCorner.Parent = list
+
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.Parent = list
+
+    local search = Instance.new("TextBox")
+    search.Name = "Search"
+    search.Size = UDim2.new(1, 0, 0, 25)
+    search.PlaceholderText = "Search..."
+    search.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    search.TextColor3 = Color3.white
+    search.BorderSizePixel = 0
+    search.Parent = list
+    local searchCorner = Instance.new("UICorner")
+    searchCorner.CornerRadius = UDim.new(0, 4)
+    searchCorner.Parent = list
+    local searchPad = Instance.new("UIPadding")
+    searchPad.PaddingLeft = UDim.new(0, 5)
+    searchPad.Parent = search
+    
+    list.CanvasSize = UDim2.new(0, 0, 0, (#options * 25) + 25)
+
+    local checkboxes = {}
+    local isOpen = false
+
+    btn.MouseButton1Click:Connect(function()
+        isOpen = not isOpen
+        list.Visible = isOpen
+        arrow.Text = isOpen and "^" or "v"
+        container.Size = isOpen and UDim2.new(1, 0, 0, 190) or UDim2.new(1, 0, 0, 30)
+    end)
+
+    for _, optName in ipairs(options) do
+        local row = Instance.new("TextButton")
+        row.Size = UDim2.new(1, 0, 0, 25)
+        row.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+        row.Text = "  " .. optName
+        row.TextColor3 = Color3.white
+        row.TextSize = 13
+        row.TextXAlignment = Enum.TextXAlignment.Left
+        row.Parent = list
+        local rowPad = Instance.new("UIPadding")
+        rowPad.PaddingLeft = UDim.new(0, 5)
+        rowPad.Parent = row
+        
+        local check = Instance.new("TextLabel")
+        check.Size = UDim2.new(0, 15, 0, 15)
+        check.Position = UDim2.new(1, -40, 0.5, -7)
+        check.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        check.BorderSizePixel = 0
+        check.Text = ""
+        check.Parent = row
+        local checkCorner = Instance.new("UICorner")
+        checkCorner.CornerRadius = UDim.new(0, 2)
+        checkCorner.Parent = check
+
+        row.MouseButton1Click:Connect(function()
+            if optName == "Show All" then
+                for name, chk in pairs(checkboxes) do
+                    chk.selected = false
+                    chk.btn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+                end
+                if typeStr == "Rarity" then Settings.SelectedRarities = {} else Settings.SelectedMutations = {} end
+                btn.Text = title .. ": Show All"
+            else
+                if not checkboxes[optName] then checkboxes[optName] = {btn = check} end
+                checkboxes[optName].selected = not checkboxes[optName].selected
+                
+                if checkboxes[optName].selected then
+                    check.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+                    if typeStr == "Rarity" then table.insert(Settings.SelectedRarities, optName)
+                    else table.insert(Settings.SelectedMutations, optName) end
+                else
+                    check.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+                    if typeStr == "Rarity" then 
+                        table.remove(Settings.SelectedRarities, table.find(Settings.SelectedRarities, optName))
+                    else
+                        table.remove(Settings.SelectedMutations, table.find(Settings.SelectedMutations, optName))
+                    end
+                end
+                
+                local count = 0
+                if typeStr == "Rarity" then count = #Settings.SelectedRarities else count = #Settings.SelectedMutations end
+                if count == 0 then btn.Text = title .. ": Show All"
+                else btn.Text = title .. ": (" .. count .. ") Selected" end
+            end
+            refreshVisibility()
+        end)
+    end
+
+    search.Changed:Connect(function()
+        local term = string.lower(search.Text)
+        for _, child in pairs(list:GetChildren()) do
+            if child:IsA("TextButton") then
+                if string.find(string.lower(child.Text), term) then
+                    child.Visible = true
+                else
+                    child.Visible = false
+                end
+            end
+        end
+    end)
+end
+
+createDropdown("Rarity", RARITY_OPTIONS, "Rarity")
+createDropdown("Mutation", MUTATION_OPTIONS, "Mutation")
+
+local ModeBtn = Instance.new("TextButton")
+ModeBtn.Name = "ModeBtn"
+ModeBtn.Size = UDim2.new(1, 0, 0, 30)
+ModeBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 40)
+ModeBtn.Text = "Mode: AND (Strict)"
+ModeBtn.TextColor3 = Color3.white
+ModeBtn.Font = Enum.Font.GothamBold
+ModeBtn.Parent = ContentFrame
+local modeCorner = Instance.new("UICorner")
+modeCorner.CornerRadius = UDim.new(0, 4)
+modeCorner.Parent = ModeBtn
+local modePad = Instance.new("UIPadding")
+modePad.PaddingLeft = UDim.new(0, 10)
+modePad.Parent = ModeBtn
+local modePadR = Instance.new("UIPadding")
+modePadR.PaddingRight = UDim.new(0, 10)
+modePadR.Parent = ModeBtn
+
+ModeBtn.MouseButton1Click:Connect(function()
+    if Settings.Mode == "AND" then
+        Settings.Mode = "OR"
+        ModeBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 40)
+        ModeBtn.Text = "Mode: OR (Loose)"
+    else
+        Settings.Mode = "AND"
+        ModeBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 40)
+        ModeBtn.Text = "Mode: AND (Strict)"
+    end
+    refreshVisibility()
+end)
+
+-- ==========================================
+-- NPC LOGIC (FIXED PATH)
+-- ==========================================
+
+local function getNPCData(npcModel)
+    local rarity = "Unknown"
+    local mutation = "Normal"
+
+    -- Use pcall to prevent game from crashing if a path is missing
+    local success = pcall(function()
+        -- Path to the frame
+        local frame = npcModel.OverheadAttachment.CharacterInfo.Frame
+        
+        -- 1. Get Rarity
+        if frame:FindFirstChild("Rarity") and frame.Rarity:IsA("TextLabel") then
+            rarity = frame.Rarity.Text
+        end
+
+        -- 2. Get Mutation (Fixed: Direct path access)
+        if frame:FindFirstChild("Mutation") then
+            local mutObj = frame.Mutation
+            
+            -- Check if it's a TextLabel or similar
+            if mutObj:IsA("TextLabel") or mutObj:IsA("TextButton") then
+                mutation = mutObj.Text
+            elseif mutObj:IsA("StringValue") or mutObj:IsA("ObjectValue") then
+                mutation = mutObj.Value
+            else
+                -- If it's a generic GuiObject but has Text property
+                mutation = mutObj.Text or mutObj.Value or "Normal"
+            end
+            
+            -- If mutation is empty or nil, assume Normal
+            if mutation == "" then mutation = "Normal" end
+        else
+            mutation = "Normal"
+        end
+    end)
+
+    return rarity, mutation
+end
+
+local function createTag(npc, rarity, mutation)
+    if npc:FindFirstChild("CustomRarityTag") then return end
+
+    local head = npc:FindFirstChild("Head") or npc:FindFirstChild("HumanoidRootPart") or npc.PrimaryPart
+    if not head then return end
+
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "CustomRarityTag"
+    billboard.Adornee = head
+    billboard.Size = UDim2.new(0, 100, 0, 50)
+    billboard.StudsOffset = Vector3.new(0, 4, 0)
+    billboard.MaxDistance = math.huge
+    billboard.AlwaysOnTop = true
+    billboard.Parent = head
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 0.5, 0)
+    label.Position = UDim2.new(0,0,0,0)
+    label.BackgroundTransparency = 0.3
+    label.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    label.TextColor3 = Color3.new(1,1,1)
+    label.Text = rarity
+    label.Font = Enum.Font.GothamBold
+    label.TextScaled = true
+    label.Parent = billboard
+
+    local label2 = label:Clone()
+    label2.Position = UDim2.new(0,0,0.5,0)
+    label2.Text = mutation
+    
+    -- Color coding for Mutation text specifically
+    if mutation == "Bloodmoon" then 
+        label2.TextColor3 = Color3.fromRGB(255,0,0)
+    elseif mutation == "Gold" then 
+        label2.TextColor3 = Color3.fromRGB(255,215,0)
+    elseif mutation == "Rainbow" then 
+        label2.TextColor3 = Color3.fromRGB(0,255,255)
+    elseif mutation == "Radioactive" then 
+        label2.TextColor3 = Color3.fromRGB(50,255,50)
+    elseif mutation == "Diamond" then
+        label2.TextColor3 = Color3.fromRGB(100,200,255)
+    elseif mutation == "Galaxy" then
+        label2.TextColor3 = Color3.fromRGB(150,50,255)
+    end
+    
+    label2.Parent = billboard
+
+    return billboard
+end
+
+local function checkMatch(rarity, mutation)
+    local matchesRarity = (#Settings.SelectedRarities == 0) or table.find(Settings.SelectedRarities, rarity)
+    local matchesMutation = (#Settings.SelectedMutations == 0) or table.find(Settings.SelectedMutations, mutation)
+
+    if Settings.Mode == "AND" then
+        return matchesRarity and matchesMutation
+    else 
+        return matchesRarity or matchesMutation
+    end
+end
+
+function refreshVisibility()
+    for npc, data in pairs(TrackedNPCs) do
+        local tag = data.Tag
+        if tag then
+            local shouldShow = checkMatch(data.Rarity, data.Mutation)
+            tag.Enabled = shouldShow
+        end
+    end
+end
+
+-- Initial Scan
+for _, npc in pairs(NPC_FOLDER:GetChildren()) do
+    task.spawn(function()
+        task.wait(0.2)
+        local r, m = getNPCData(npc)
+        local tag = createTag(npc, r, m)
+        if tag then
+            tag.Enabled = false
+            TrackedNPCs[npc] = {Rarity = r, Mutation = m, Tag = tag}
+        end
+    end)
+end
+
+-- New NPC Listener
+NPC_FOLDER.ChildAdded:Connect(function(npc)
+    task.wait(0.5)
+    local r, m = getNPCData(npc)
+    local tag = createTag(npc, r, m)
+    if tag then
+        local shouldShow = checkMatch(r, m)
+        tag.Enabled = shouldShow
+        TrackedNPCs[npc] = {Rarity = r, Mutation = m, Tag = tag}
+    end
+end)
+
+task.wait(1)
+refreshVisibility()
