@@ -1,11 +1,13 @@
+--[[
+	WARNING: Heads up! This script has not been verified by ScriptBlox. Use at your own risk!
+]]
+
 -- Services
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Lighting = game:GetService("Lighting")
-local Camera = workspace.CurrentCamera
 
 -- ==========================================
 -- AUTO ANTI-AFK
@@ -37,55 +39,56 @@ local Config = {
     MoneyDelay = 10,
     ScanDelay = 0.5,
     SuccessCount = 0,
-    NoclipEnabled = false,
-    TPSpeed = 350 -- Studs per second (Smooth enough to avoid loading screens)
+    NoclipEnabled = false
 }
 
 if CoreGui:FindFirstChild("DeltaFarmGui") then CoreGui.DeltaFarmGui:Destroy() end
 
 -- ==========================================
--- UTILITY: SMOOTH TWEEN TP
+-- UTILITY FUNCTIONS
 -- ==========================================
-local function smoothTP(targetCFrame)
-    local hrp = Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    
-    local distance = (hrp.Position - targetCFrame.Position).Magnitude
-    local duration = distance / Config.TPSpeed
-    
-    local tween = TweenService:Create(hrp, TweenInfo.new(duration, Enum.EasingStyle.Linear), {CFrame = targetCFrame})
-    tween:Play()
-    tween.Completed:Wait()
-end
 
--- ==========================================
--- UTILITY: FPS BOOSTER
--- ==========================================
 local function toggleFPSBoost(enabled)
     if enabled then
         Lighting.GlobalShadows = false
-        Lighting.FogEnd = 9e9
         settings().Rendering.QualityLevel = 1
         for _, v in pairs(game:GetDescendants()) do
-            if v:IsA("Part") or v:IsA("MeshPart") or v:IsA("UnionOperation") then
+            if v:IsA("Part") or v:IsA("MeshPart") then
                 v.Material = Enum.Material.SmoothPlastic
-                v.Reflectance = 0
-            elseif v:IsA("Decal") or v:IsA("Texture") then
-                v.Transparency = 1
-            elseif v:IsA("ParticleEmitter") or v:IsA("Trail") then
+            elseif v:IsA("Decal") or v:IsA("Texture") or v:IsA("ParticleEmitter") then
                 v.Enabled = false
             end
         end
-    else
-        -- Note: Reversing effects requires storing original values; usually players keep boost ON
-        Lighting.GlobalShadows = true
-        settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
+    end
+end
+
+local function isHandClear()
+    local char = Players.LocalPlayer.Character
+    if not char then return true end
+    -- Check if there's any tool parented to the character (meaning it's in hand)
+    for _, item in pairs(char:GetChildren()) do
+        if item:IsA("Tool") then return false end
+    end
+    return true
+end
+
+local function forceClear()
+    local player = Players.LocalPlayer
+    local char = player.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum:UnequipTools() end
+        task.wait(0.1)
+        for _, itm in pairs(char:GetChildren()) do
+            if itm:IsA("Tool") then itm.Parent = player.Backpack end
+        end
     end
 end
 
 -- ==========================================
--- CORE LOOPS (MONEY & TSUNAMI)
+-- AUTOMATION THREADS
 -- ==========================================
+
 task.spawn(function()
     local collectRemote = ReplicatedStorage:WaitForChild("RemoteEvents", 5):WaitForChild("CollectMoney", 5)
     while true do
@@ -106,7 +109,6 @@ task.spawn(function()
     end
 end)
 
--- Character Noclip
 RunService.Stepped:Connect(function()
     if Config.NoclipEnabled and Players.LocalPlayer.Character then
         for _, part in pairs(Players.LocalPlayer.Character:GetDescendants()) do
@@ -129,8 +131,8 @@ ToggleBtn.Text = "MENU"
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
 
 local MainFrame = Instance.new("Frame", ScreenGui)
-MainFrame.Size = UDim2.new(0, 220, 0, 300)
-MainFrame.Position = UDim2.new(0.5, -110, 0.4, -150)
+MainFrame.Size = UDim2.new(0, 220, 0, 280)
+MainFrame.Position = UDim2.new(0.5, -110, 0.4, -140)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 Instance.new("UICorner", MainFrame)
 Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(0, 255, 120)
@@ -138,26 +140,19 @@ Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(0, 255, 120)
 ToggleBtn.MouseButton1Click:Connect(function() MainFrame.Visible = not MainFrame.Visible end)
 
 local Scroll = Instance.new("ScrollingFrame", MainFrame)
-Scroll.Size = UDim2.new(1, -10, 1, -10)
-Scroll.Position = UDim2.new(0, 5, 0, 5)
-Scroll.BackgroundTransparency = 1
-Scroll.CanvasSize = UDim2.new(0, 0, 0, 420)
+Scroll.Size = UDim2.new(1, -10, 1, -10); Scroll.Position = UDim2.new(0, 5, 0, 5)
+Scroll.BackgroundTransparency = 1; Scroll.CanvasSize = UDim2.new(0, 0, 0, 380)
 Scroll.ScrollBarThickness = 2
 
 local Layout = Instance.new("UIListLayout", Scroll)
-Layout.Padding = UDim.new(0, 6)
-Layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+Layout.Padding = UDim.new(0, 6); Layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 local function CreateBtn(text, color)
     local b = Instance.new("TextButton", Scroll)
-    b.Size = UDim2.new(0.95, 0, 0, 35)
-    b.BackgroundColor3 = color
-    b.TextColor3 = Color3.new(1,1,1)
-    b.Text = text
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 11
-    Instance.new("UICorner", b)
-    return b
+    b.Size = UDim2.new(0.95, 0, 0, 35); b.BackgroundColor3 = color
+    b.TextColor3 = Color3.new(1,1,1); b.Text = text
+    b.Font = Enum.Font.GothamBold; b.TextSize = 11
+    Instance.new("UICorner", b); return b
 end
 
 local SearchInput = Instance.new("TextBox", Scroll)
@@ -181,6 +176,7 @@ local Stats = Instance.new("TextLabel", Scroll)
 Stats.Size = UDim2.new(1, 0, 0, 20); Stats.TextColor3 = Color3.new(0.7, 0.7, 0.7); Stats.BackgroundTransparency = 1
 Stats.Text = "Claims: 0 | AFK: ON"; Stats.TextSize = 10
 
+-- Connection logic for buttons
 FpsBtn.MouseButton1Click:Connect(function()
     Config.FpsBoostEnabled = not Config.FpsBoostEnabled
     FpsBtn.Text = Config.FpsBoostEnabled and "FPS BOOST: ON" or "FPS BOOST: OFF"
@@ -201,7 +197,7 @@ TsunamiBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ==========================================
--- BRAINROT LOGIC (STABLE TWEEN VERSION)
+-- BRAINROT LOGIC (STABLE INSTANT TP)
 -- ==========================================
 
 local function findItem(name)
@@ -232,44 +228,47 @@ task.spawn(function()
             local hrp = Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             if not hrp or not Config.BasePos then continue end
 
-            -- 1. Smooth TP to Observation (Wait for Tween to finish)
-            Config.NoclipEnabled = true
-            smoothTP(Config.ObservationPoint)
-            
-            local targetItem = nil
-            repeat
-                task.wait(0.5)
-                if not Config.AutoClaimEnabled then break end
-                targetItem = findItem(Config.SearchName)
-            until targetItem or not Config.AutoClaimEnabled
+            -- 1. HAND CLEAR VERIFICATION (Must be clear before leaving Base)
+            if not isHandClear() then
+                hrp.CFrame = Config.BasePos
+                forceClear()
+                task.wait(1) -- Wait for inventory to sync
+            end
 
-            -- 2. Claim
-            if targetItem and Config.AutoClaimEnabled then
-                local p = targetItem:IsA("BasePart") and targetItem or (targetItem.PrimaryPart or targetItem:FindFirstChildWhichIsA("BasePart"))
-                if p then
-                    hrp.CFrame = p.CFrame 
-                    task.wait(0.3)
-                    for _, obj in pairs(targetItem:GetDescendants()) do
-                        if obj:IsA("ProximityPrompt") then fireproximityprompt(obj) end
-                        if obj:IsA("TouchTransmitter") then firetouchinterest(hrp, obj.Parent, 0); task.wait(); firetouchinterest(hrp, obj.Parent, 1) end
+            -- 2. TP TO WATCH POINT (Only if hands are clear)
+            if isHandClear() then
+                Config.NoclipEnabled = true
+                hrp.CFrame = Config.ObservationPoint
+                
+                local targetItem = nil
+                repeat
+                    task.wait(0.5)
+                    if not Config.AutoClaimEnabled then break end
+                    targetItem = findItem(Config.SearchName)
+                until targetItem or not Config.AutoClaimEnabled
+
+                -- 3. CLAIM
+                if targetItem and Config.AutoClaimEnabled then
+                    local p = targetItem:IsA("BasePart") and targetItem or (targetItem.PrimaryPart or targetItem:FindFirstChildWhichIsA("BasePart"))
+                    if p then
+                        hrp.CFrame = p.CFrame 
+                        task.wait(0.3)
+                        for _, obj in pairs(targetItem:GetDescendants()) do
+                            if obj:IsA("ProximityPrompt") then fireproximityprompt(obj) end
+                            if obj:IsA("TouchTransmitter") then firetouchinterest(hrp, obj.Parent, 0); task.wait(); firetouchinterest(hrp, obj.Parent, 1) end
+                        end
+                        task.wait(0.4)
+                        
+                        -- 4. RETURN AND IMMEDIATELY START CLEARING
+                        Config.NoclipEnabled = false
+                        hrp.CFrame = Config.BasePos
+                        task.wait(0.5)
+                        forceClear()
+                        
+                        Config.SuccessCount = Config.SuccessCount + 1
+                        Stats.Text = "Claims: " .. tostring(Config.SuccessCount) .. " | AFK: ON"
+                        task.wait(2.5) 
                     end
-                    task.wait(0.4)
-                    
-                    -- 3. Return and BULLETPROOF HAND CLEAR
-                    smoothTP(Config.BasePos)
-                    Config.NoclipEnabled = false
-                    
-                    task.wait(0.3) -- Character state sync delay
-                    local char = Players.LocalPlayer.Character
-                    if char then
-                        local hum = char:FindFirstChildOfClass("Humanoid")
-                        if hum then hum:UnequipTools() end
-                        for _, itm in pairs(char:GetChildren()) do if itm:IsA("Tool") then itm.Parent = Players.LocalPlayer.Backpack end end
-                    end
-                    
-                    Config.SuccessCount = Config.SuccessCount + 1
-                    Stats.Text = "Claims: " .. tostring(Config.SuccessCount) .. " | AFK: ON"
-                    task.wait(2.5) -- Cool down at base
                 end
             end
         end
