@@ -1,0 +1,282 @@
+--[[
+	WARNING: Heads up! This script has not been verified by ScriptBlox. Use at your own risk!
+]]
+
+-- Services
+local Players = game:GetService("Players")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Camera = workspace.CurrentCamera
+
+-- ==========================================
+-- AUTO ANTI-AFK LOGIC
+-- ==========================================
+local GC = getconnections or get_signal_cons
+
+if GC then
+    for i,v in pairs(GC(Players.LocalPlayer.Idled)) do
+        if v["Disable"] then v["Disable"](v) elseif v["Disconnect"] then v["Disconnect"](v) end
+    end
+else
+    local VirtualUser = cloneref(game:GetService("VirtualUser"))
+    Players.LocalPlayer.Idled:Connect(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end)
+end
+
+-- ==========================================
+-- CONFIGURATION
+-- ==========================================
+local Config = {
+    SearchName = "Aura Farma",
+    ObservationPoint = CFrame.new(2277, -2, 73), -- Restored your requested watcher pos
+    BasePos = nil, 
+    AutoClaimEnabled = false,
+    TsunamiDeleteEnabled = false,
+    AutoCollectMoney = false,
+    MoneyDelay = 10,
+    ScanDelay = 0.5,
+    SuccessCount = 0,
+    NoclipEnabled = false
+}
+
+if CoreGui:FindFirstChild("DeltaFarmGui") then
+    CoreGui.DeltaFarmGui:Destroy()
+end
+
+-- Camera/Noclip Settings
+Players.LocalPlayer.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam
+
+RunService.Stepped:Connect(function()
+    if Config.NoclipEnabled and Players.LocalPlayer.Character then
+        for _, part in pairs(Players.LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") then part.CanCollide = false end
+        end
+    end
+end)
+
+-- ==========================================
+-- AUTOMATION THREADS
+-- ==========================================
+
+-- 1. Adaptive Money Collector (Slots 1-100)
+task.spawn(function()
+    local collectRemote = ReplicatedStorage:WaitForChild("RemoteEvents", 5):WaitForChild("CollectMoney", 5)
+    while true do
+        task.wait(Config.MoneyDelay)
+        if Config.AutoCollectMoney and collectRemote then
+            local slotIndex = 1
+            repeat
+                collectRemote:FireServer("Slot" .. tostring(slotIndex))
+                slotIndex = slotIndex + 1
+                if slotIndex % 10 == 0 then task.wait(0.1) end 
+            until slotIndex > 100 
+        end
+    end
+end)
+
+-- 2. Tsunami Deleter
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if Config.TsunamiDeleteEnabled then
+            local folder = workspace:FindFirstChild("ActiveTsunamis")
+            if folder then for _, v in pairs(folder:GetChildren()) do v:Destroy() end end
+        end
+    end
+end)
+
+-- ==========================================
+-- COMPACT GUI SETUP
+-- ==========================================
+local ScreenGui = Instance.new("ScreenGui", CoreGui)
+ScreenGui.Name = "DeltaFarmGui"
+
+local ToggleBtn = Instance.new("TextButton", ScreenGui)
+ToggleBtn.Size = UDim2.new(0, 45, 0, 45)
+ToggleBtn.Position = UDim2.new(0, 20, 0, 20)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 255, 120)
+ToggleBtn.Text = "MENU"
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
+
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 220, 0, 280)
+MainFrame.Position = UDim2.new(0.5, -110, 0.4, -140)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+Instance.new("UICorner", MainFrame)
+Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(0, 255, 120)
+
+ToggleBtn.MouseButton1Click:Connect(function() MainFrame.Visible = not MainFrame.Visible end)
+
+local Scroll = Instance.new("ScrollingFrame", MainFrame)
+Scroll.Size = UDim2.new(1, -10, 1, -10)
+Scroll.Position = UDim2.new(0, 5, 0, 5)
+Scroll.BackgroundTransparency = 1
+Scroll.CanvasSize = UDim2.new(0, 0, 0, 400)
+Scroll.ScrollBarThickness = 2
+Scroll.ScrollBarImageColor3 = Color3.fromRGB(0, 255, 120)
+
+local Layout = Instance.new("UIListLayout", Scroll)
+Layout.Padding = UDim.new(0, 6)
+Layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+local function CreateBtn(text, color)
+    local b = Instance.new("TextButton", Scroll)
+    b.Size = UDim2.new(0.95, 0, 0, 35)
+    b.BackgroundColor3 = color
+    b.TextColor3 = Color3.new(1,1,1)
+    b.Text = text
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 11
+    Instance.new("UICorner", b)
+    return b
+end
+
+local Title = Instance.new("TextLabel", Scroll)
+Title.Size = UDim2.new(1, 0, 0, 20)
+Title.Text = "ULTIMATE FARM V22"
+Title.TextColor3 = Color3.fromRGB(0, 255, 120)
+Title.BackgroundTransparency = 1
+Title.Font = Enum.Font.GothamBold
+
+local SearchInput = Instance.new("TextBox", Scroll)
+SearchInput.Size = UDim2.new(0.95, 0, 0, 30)
+SearchInput.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+SearchInput.TextColor3 = Color3.new(1,1,1)
+SearchInput.Text = Config.SearchName
+SearchInput.PlaceholderText = "Target Name..."
+Instance.new("UICorner", SearchInput)
+
+SearchInput:GetPropertyChangedSignal("Text"):Connect(function() Config.SearchName = SearchInput.Text end)
+
+local MoneyInput = Instance.new("TextBox", Scroll)
+MoneyInput.Size = UDim2.new(0.95, 0, 0, 30)
+MoneyInput.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MoneyInput.TextColor3 = Color3.new(1,1,1)
+MoneyInput.Text = "10"
+MoneyInput.PlaceholderText = "Money Delay (sec)"
+Instance.new("UICorner", MoneyInput)
+
+MoneyInput:GetPropertyChangedSignal("Text"):Connect(function()
+    local val = tonumber(MoneyInput.Text)
+    if val then Config.MoneyDelay = math.clamp(val, 1, 60) end
+end)
+
+local MoneyBtn = CreateBtn("AUTO MONEY: OFF", Color3.fromRGB(50, 50, 50))
+local TsunamiBtn = CreateBtn("DEL TSUNAMI: OFF", Color3.fromRGB(50, 50, 50))
+local AutoBtn = CreateBtn("START AUTO FARM", Color3.fromRGB(0, 150, 80))
+
+local Stats = Instance.new("TextLabel", Scroll)
+Stats.Size = UDim2.new(1, 0, 0, 20)
+Stats.Text = "Claims: 0 | AFK: ON"
+Stats.TextColor3 = Color3.new(0.7, 0.7, 0.7)
+Stats.BackgroundTransparency = 1
+Stats.TextSize = 10
+
+-- Toggles
+MoneyBtn.MouseButton1Click:Connect(function()
+    Config.AutoCollectMoney = not Config.AutoCollectMoney
+    MoneyBtn.Text = Config.AutoCollectMoney and "AUTO MONEY: ON" or "AUTO MONEY: OFF"
+    MoneyBtn.BackgroundColor3 = Config.AutoCollectMoney and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(50, 50, 50)
+end)
+
+TsunamiBtn.MouseButton1Click:Connect(function()
+    Config.TsunamiDeleteEnabled = not Config.TsunamiDeleteEnabled
+    TsunamiBtn.Text = Config.TsunamiDeleteEnabled and "DEL TSUNAMI: ON" or "DEL TSUNAMI: OFF"
+    TsunamiBtn.BackgroundColor3 = Config.TsunamiDeleteEnabled and Color3.fromRGB(200, 0, 0) or Color3.fromRGB(50, 50, 50)
+end)
+
+-- ==========================================
+-- V15 BRAINROT LOGIC (ROLLBACK)
+-- ==========================================
+
+local function forceEmptyHands()
+    local player = Players.LocalPlayer
+    local char = player.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum:UnequipTools() end
+        for _, item in pairs(char:GetChildren()) do
+            if item:IsA("Tool") then item.Parent = player.Backpack end
+        end
+    end
+end
+
+local function findItem(name)
+    local folder = workspace:FindFirstChild("ActiveBrainrots", true)
+    if folder then
+        local secret = folder:FindFirstChild("Secret")
+        if secret then return secret:FindFirstChild(name) end
+    end
+    return workspace:FindFirstChild(name, true)
+end
+
+local function aggressiveClaim(item, hrp)
+    for _, obj in pairs(item:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") then fireproximityprompt(obj) end
+        if obj:IsA("TouchTransmitter") then
+            firetouchinterest(hrp, obj.Parent, 0)
+            task.wait()
+            firetouchinterest(hrp, obj.Parent, 1)
+        end
+    end
+end
+
+AutoBtn.MouseButton1Click:Connect(function()
+    local hrp = Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    Config.AutoClaimEnabled = not Config.AutoClaimEnabled
+    if Config.AutoClaimEnabled then
+        Config.BasePos = hrp.CFrame 
+        AutoBtn.Text = "STOP AUTO FARM"
+        AutoBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+    else
+        AutoBtn.Text = "START AUTO FARM"
+        AutoBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 80)
+        Config.NoclipEnabled = false
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(Config.ScanDelay)
+        if Config.AutoClaimEnabled then
+            local hrp = Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if not hrp or not Config.BasePos then continue end
+
+            -- Stay at Observation (Noclip On)
+            Config.NoclipEnabled = true
+            hrp.CFrame = Config.ObservationPoint
+            
+            local targetItem = nil
+            repeat
+                task.wait(0.5)
+                if not Config.AutoClaimEnabled then break end
+                targetItem = findItem(Config.SearchName)
+            until targetItem or not Config.AutoClaimEnabled
+
+            if targetItem and Config.AutoClaimEnabled then
+                local p = targetItem:IsA("BasePart") and targetItem or (targetItem.PrimaryPart or targetItem:FindFirstChildWhichIsA("BasePart"))
+                if p then
+                    hrp.CFrame = p.CFrame 
+                    task.wait(0.2)
+                    aggressiveClaim(targetItem, hrp)
+                    task.wait(0.4)
+                    
+                    -- Return to Base (Noclip Off)
+                    Config.NoclipEnabled = false
+                    hrp.CFrame = Config.BasePos
+                    task.wait(0.5)
+                    forceEmptyHands()
+                    
+                    Config.SuccessCount = Config.SuccessCount + 1
+                    Stats.Text = "Claims: " .. tostring(Config.SuccessCount) .. " | AFK: ON"
+                    task.wait(2.5) 
+                end
+            end
+        end
+    end
+end)
