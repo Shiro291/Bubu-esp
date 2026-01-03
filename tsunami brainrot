@@ -1,16 +1,13 @@
---[[
-	WARNING: Heads up! This script has not been verified by ScriptBlox. Use at your own risk!
-]]
-
 -- Services
 local Players = game:GetService("Players")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Lighting = game:GetService("Lighting")
+local Camera = workspace.CurrentCamera
 
 -- ==========================================
--- AUTO ANTI-AFK
+-- AUTO ANTI-AFK LOGIC
 -- ==========================================
 local GC = getconnections or get_signal_cons
 if GC then
@@ -35,79 +32,18 @@ local Config = {
     AutoClaimEnabled = false,
     TsunamiDeleteEnabled = false,
     AutoCollectMoney = false,
-    FpsBoostEnabled = false,
     MoneyDelay = 10,
     ScanDelay = 0.5,
     SuccessCount = 0,
     NoclipEnabled = false
 }
 
-if CoreGui:FindFirstChild("DeltaFarmGui") then CoreGui.DeltaFarmGui:Destroy() end
-
--- ==========================================
--- UTILITY FUNCTIONS
--- ==========================================
-
-local function toggleFPSBoost(enabled)
-    if enabled then
-        Lighting.GlobalShadows = false
-        settings().Rendering.QualityLevel = 1
-        for _, v in pairs(game:GetDescendants()) do
-            if v:IsA("Part") or v:IsA("MeshPart") then
-                v.Material = Enum.Material.SmoothPlastic
-            elseif v:IsA("Decal") or v:IsA("Texture") or v:IsA("ParticleEmitter") then
-                v.Enabled = false
-            end
-        end
-    end
+if CoreGui:FindFirstChild("DeltaFarmGui") then
+    CoreGui.DeltaFarmGui:Destroy()
 end
 
-local function isHandClear()
-    local char = Players.LocalPlayer.Character
-    if not char then return true end
-    -- Check if there's any tool parented to the character (meaning it's in hand)
-    for _, item in pairs(char:GetChildren()) do
-        if item:IsA("Tool") then return false end
-    end
-    return true
-end
-
-local function forceClear()
-    local player = Players.LocalPlayer
-    local char = player.Character
-    if char then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then hum:UnequipTools() end
-        task.wait(0.1)
-        for _, itm in pairs(char:GetChildren()) do
-            if itm:IsA("Tool") then itm.Parent = player.Backpack end
-        end
-    end
-end
-
--- ==========================================
--- AUTOMATION THREADS
--- ==========================================
-
-task.spawn(function()
-    local collectRemote = ReplicatedStorage:WaitForChild("RemoteEvents", 5):WaitForChild("CollectMoney", 5)
-    while true do
-        task.wait(Config.MoneyDelay)
-        if Config.AutoCollectMoney and collectRemote then
-            for i = 1, 100 do collectRemote:FireServer("Slot" .. tostring(i)) if i % 10 == 0 then task.wait(0.1) end end
-        end
-    end
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(0.1)
-        if Config.TsunamiDeleteEnabled then
-            local folder = workspace:FindFirstChild("ActiveTsunamis")
-            if folder then for _, v in pairs(folder:GetChildren()) do v:Destroy() end end
-        end
-    end
-end)
+-- Settings
+Players.LocalPlayer.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam
 
 RunService.Stepped:Connect(function()
     if Config.NoclipEnabled and Players.LocalPlayer.Character then
@@ -118,7 +54,36 @@ RunService.Stepped:Connect(function()
 end)
 
 -- ==========================================
--- COMPACT GUI
+-- AUTOMATION THREADS
+-- ==========================================
+
+-- 1. Adaptive Money Collector (Slots 1-100)
+task.spawn(function()
+    local collectRemote = ReplicatedStorage:WaitForChild("RemoteEvents", 5):WaitForChild("CollectMoney", 5)
+    while true do
+        task.wait(Config.MoneyDelay)
+        if Config.AutoCollectMoney and collectRemote then
+            for i = 1, 100 do
+                collectRemote:FireServer("Slot" .. tostring(i))
+                if i % 10 == 0 then task.wait(0.1) end 
+            end
+        end
+    end
+end)
+
+-- 2. Tsunami Deleter
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if Config.TsunamiDeleteEnabled then
+            local folder = workspace:FindFirstChild("ActiveTsunamis")
+            if folder then for _, v in pairs(folder:GetChildren()) do v:Destroy() end end
+        end
+    end
+end)
+
+-- ==========================================
+-- COMPACT GUI SETUP
 -- ==========================================
 local ScreenGui = Instance.new("ScreenGui", CoreGui)
 ScreenGui.Name = "DeltaFarmGui"
@@ -140,50 +105,71 @@ Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(0, 255, 120)
 ToggleBtn.MouseButton1Click:Connect(function() MainFrame.Visible = not MainFrame.Visible end)
 
 local Scroll = Instance.new("ScrollingFrame", MainFrame)
-Scroll.Size = UDim2.new(1, -10, 1, -10); Scroll.Position = UDim2.new(0, 5, 0, 5)
-Scroll.BackgroundTransparency = 1; Scroll.CanvasSize = UDim2.new(0, 0, 0, 380)
+Scroll.Size = UDim2.new(1, -10, 1, -10)
+Scroll.Position = UDim2.new(0, 5, 0, 5)
+Scroll.BackgroundTransparency = 1
+Scroll.CanvasSize = UDim2.new(0, 0, 0, 400)
 Scroll.ScrollBarThickness = 2
+Scroll.ScrollBarImageColor3 = Color3.fromRGB(0, 255, 120)
 
 local Layout = Instance.new("UIListLayout", Scroll)
-Layout.Padding = UDim.new(0, 6); Layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+Layout.Padding = UDim.new(0, 6)
+Layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 local function CreateBtn(text, color)
     local b = Instance.new("TextButton", Scroll)
-    b.Size = UDim2.new(0.95, 0, 0, 35); b.BackgroundColor3 = color
-    b.TextColor3 = Color3.new(1,1,1); b.Text = text
-    b.Font = Enum.Font.GothamBold; b.TextSize = 11
-    Instance.new("UICorner", b); return b
+    b.Size = UDim2.new(0.95, 0, 0, 35)
+    b.BackgroundColor3 = color
+    b.TextColor3 = Color3.new(1,1,1)
+    b.Text = text
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 11
+    Instance.new("UICorner", b)
+    return b
 end
 
+local Title = Instance.new("TextLabel", Scroll)
+Title.Size = UDim2.new(1, 0, 0, 20)
+Title.Text = "ULTIMATE FARM V27"
+Title.TextColor3 = Color3.fromRGB(0, 255, 120)
+Title.BackgroundTransparency = 1
+Title.Font = Enum.Font.GothamBold
+
 local SearchInput = Instance.new("TextBox", Scroll)
-SearchInput.Size = UDim2.new(0.95, 0, 0, 30); SearchInput.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-SearchInput.TextColor3 = Color3.new(1,1,1); SearchInput.Text = Config.SearchName
+SearchInput.Size = UDim2.new(0.95, 0, 0, 30)
+SearchInput.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+SearchInput.TextColor3 = Color3.new(1,1,1)
+SearchInput.Text = Config.SearchName
+SearchInput.PlaceholderText = "Target Name..."
 Instance.new("UICorner", SearchInput)
+
 SearchInput:GetPropertyChangedSignal("Text"):Connect(function() Config.SearchName = SearchInput.Text end)
 
 local MoneyInput = Instance.new("TextBox", Scroll)
-MoneyInput.Size = UDim2.new(0.95, 0, 0, 30); MoneyInput.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-MoneyInput.TextColor3 = Color3.new(1,1,1); MoneyInput.Text = "10"
+MoneyInput.Size = UDim2.new(0.95, 0, 0, 30)
+MoneyInput.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MoneyInput.TextColor3 = Color3.new(1,1,1)
+MoneyInput.Text = "10"
+MoneyInput.PlaceholderText = "Money Delay (sec)"
 Instance.new("UICorner", MoneyInput)
-MoneyInput:GetPropertyChangedSignal("Text"):Connect(function() local val = tonumber(MoneyInput.Text) if val then Config.MoneyDelay = math.clamp(val, 1, 60) end end)
 
-local FpsBtn = CreateBtn("FPS BOOST: OFF", Color3.fromRGB(50, 50, 50))
+MoneyInput:GetPropertyChangedSignal("Text"):Connect(function()
+    local val = tonumber(MoneyInput.Text)
+    if val then Config.MoneyDelay = math.clamp(val, 1, 60) end
+end)
+
 local MoneyBtn = CreateBtn("AUTO MONEY: OFF", Color3.fromRGB(50, 50, 50))
 local TsunamiBtn = CreateBtn("DEL TSUNAMI: OFF", Color3.fromRGB(50, 50, 50))
 local AutoBtn = CreateBtn("START AUTO FARM", Color3.fromRGB(0, 150, 80))
 
 local Stats = Instance.new("TextLabel", Scroll)
-Stats.Size = UDim2.new(1, 0, 0, 20); Stats.TextColor3 = Color3.new(0.7, 0.7, 0.7); Stats.BackgroundTransparency = 1
-Stats.Text = "Claims: 0 | AFK: ON"; Stats.TextSize = 10
+Stats.Size = UDim2.new(1, 0, 0, 20)
+Stats.Text = "Claims: 0 | AFK: ON"
+Stats.TextColor3 = Color3.new(0.7, 0.7, 0.7)
+Stats.BackgroundTransparency = 1
+Stats.TextSize = 10
 
--- Connection logic for buttons
-FpsBtn.MouseButton1Click:Connect(function()
-    Config.FpsBoostEnabled = not Config.FpsBoostEnabled
-    FpsBtn.Text = Config.FpsBoostEnabled and "FPS BOOST: ON" or "FPS BOOST: OFF"
-    FpsBtn.BackgroundColor3 = Config.FpsBoostEnabled and Color3.fromRGB(150, 0, 255) or Color3.fromRGB(50, 50, 50)
-    toggleFPSBoost(Config.FpsBoostEnabled)
-end)
-
+-- Toggles
 MoneyBtn.MouseButton1Click:Connect(function()
     Config.AutoCollectMoney = not Config.AutoCollectMoney
     MoneyBtn.Text = Config.AutoCollectMoney and "AUTO MONEY: ON" or "AUTO MONEY: OFF"
@@ -197,14 +183,59 @@ TsunamiBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ==========================================
--- BRAINROT LOGIC (STABLE INSTANT TP)
+-- BRAINROT LOGIC (V15 Logic + Safety Filters)
 -- ==========================================
 
-local function findItem(name)
-    local folder = workspace:FindFirstChild("ActiveBrainrots", true)
-    local secret = folder and folder:FindFirstChild("Secret")
-    return (secret and secret:FindFirstChild(name)) or workspace:FindFirstChild(name, true)
+local function forceEmptyHands()
+    local char = Players.LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum:UnequipTools() end
+        for _, item in pairs(char:GetChildren()) do
+            if item:IsA("Tool") then item.Parent = Players.LocalPlayer.Backpack end
+        end
+    end
 end
+
+-- THE FILTERED SEARCH
+local function findValidItem(name)
+    if not Config.BasePos then return nil end
+    
+    -- Recursive search through workspace
+    for _, item in pairs(workspace:GetDescendants()) do
+        if item.Name == name then
+            -- 1. Check if it's claimable (has prompt/touch)
+            local trigger = item:FindFirstChildOfClass("ProximityPrompt", true) or item:FindFirstChildOfClass("TouchTransmitter", true)
+            
+            if trigger then
+                -- 2. Check Distance (Ignore items within 60 studs of your Base)
+                local p = item:IsA("BasePart") and item or (item.PrimaryPart or item:FindFirstChildWhichIsA("BasePart"))
+                if p then
+                    local dist = (p.Position - Config.BasePos.Position).Magnitude
+                    if dist > 60 then
+                        return item -- Valid Spawn Found
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function aggressiveClaim(item, hrp)
+    for _, obj in pairs(item:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") then fireproximityprompt(obj) end
+        if obj:IsA("TouchTransmitter") then
+            firetouchinterest(hrp, obj.Parent, 0)
+            task.wait()
+            firetouchinterest(hrp, obj.Parent, 1)
+        end
+    end
+end
+
+-- ==========================================
+-- MAIN AUTO-FARM LOOP
+-- ==========================================
 
 AutoBtn.MouseButton1Click:Connect(function()
     local hrp = Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -228,47 +259,36 @@ task.spawn(function()
             local hrp = Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             if not hrp or not Config.BasePos then continue end
 
-            -- 1. HAND CLEAR VERIFICATION (Must be clear before leaving Base)
-            if not isHandClear() then
-                hrp.CFrame = Config.BasePos
-                forceClear()
-                task.wait(1) -- Wait for inventory to sync
-            end
+            -- 1. Watcher Anchor
+            Config.NoclipEnabled = true
+            hrp.CFrame = Config.ObservationPoint
+            
+            -- 2. Verified Scan
+            local targetItem = nil
+            repeat
+                task.wait(0.5)
+                if not Config.AutoClaimEnabled then break end
+                targetItem = findValidItem(Config.SearchName)
+            until targetItem or not Config.AutoClaimEnabled
 
-            -- 2. TP TO WATCH POINT (Only if hands are clear)
-            if isHandClear() then
-                Config.NoclipEnabled = true
-                hrp.CFrame = Config.ObservationPoint
-                
-                local targetItem = nil
-                repeat
+            -- 3. Claim Process
+            if targetItem and Config.AutoClaimEnabled then
+                local p = targetItem:IsA("BasePart") and targetItem or (targetItem.PrimaryPart or targetItem:FindFirstChildWhichIsA("BasePart"))
+                if p then
+                    hrp.CFrame = p.CFrame 
+                    task.wait(0.2)
+                    aggressiveClaim(targetItem, hrp)
+                    task.wait(0.4)
+                    
+                    -- 4. Return and Empty Hand
+                    Config.NoclipEnabled = false
+                    hrp.CFrame = Config.BasePos
                     task.wait(0.5)
-                    if not Config.AutoClaimEnabled then break end
-                    targetItem = findItem(Config.SearchName)
-                until targetItem or not Config.AutoClaimEnabled
-
-                -- 3. CLAIM
-                if targetItem and Config.AutoClaimEnabled then
-                    local p = targetItem:IsA("BasePart") and targetItem or (targetItem.PrimaryPart or targetItem:FindFirstChildWhichIsA("BasePart"))
-                    if p then
-                        hrp.CFrame = p.CFrame 
-                        task.wait(0.3)
-                        for _, obj in pairs(targetItem:GetDescendants()) do
-                            if obj:IsA("ProximityPrompt") then fireproximityprompt(obj) end
-                            if obj:IsA("TouchTransmitter") then firetouchinterest(hrp, obj.Parent, 0); task.wait(); firetouchinterest(hrp, obj.Parent, 1) end
-                        end
-                        task.wait(0.4)
-                        
-                        -- 4. RETURN AND IMMEDIATELY START CLEARING
-                        Config.NoclipEnabled = false
-                        hrp.CFrame = Config.BasePos
-                        task.wait(0.5)
-                        forceClear()
-                        
-                        Config.SuccessCount = Config.SuccessCount + 1
-                        Stats.Text = "Claims: " .. tostring(Config.SuccessCount) .. " | AFK: ON"
-                        task.wait(2.5) 
-                    end
+                    forceEmptyHands()
+                    
+                    Config.SuccessCount = Config.SuccessCount + 1
+                    Stats.Text = "Claims: " .. tostring(Config.SuccessCount) .. " | AFK: ON"
+                    task.wait(2.5) 
                 end
             end
         end
