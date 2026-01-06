@@ -1,13 +1,11 @@
 -- Services
 local Players = game:GetService("Players")
-local VirtualInputManager = game:GetService("VirtualInputManager")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Camera = workspace.CurrentCamera
 
 -- ==========================================
--- AUTO ANTI-AFK LOGIC
+-- AUTO ANTI-AFK 
 -- ==========================================
 local GC = getconnections or get_signal_cons
 if GC then
@@ -15,11 +13,8 @@ if GC then
         if v["Disable"] then v["Disable"](v) elseif v["Disconnect"] then v["Disconnect"](v) end
     end
 else
-    local VirtualUser = cloneref(game:GetService("VirtualUser"))
-    Players.LocalPlayer.Idled:Connect(function()
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.new())
-    end)
+    local VU = cloneref(game:GetService("VirtualUser"))
+    Players.LocalPlayer.Idled:Connect(function() VU:CaptureController(); VU:ClickButton2(Vector2.new()) end)
 end
 
 -- ==========================================
@@ -30,20 +25,26 @@ local Config = {
     ObservationPoint = CFrame.new(2277, -2, 73), 
     BasePos = nil, 
     AutoClaimEnabled = false,
+    DesyncEnabled = false, 
     TsunamiDeleteEnabled = false,
     AutoCollectMoney = false,
     MoneyDelay = 10,
-    ScanDelay = 0.5,
     SuccessCount = 0,
-    NoclipEnabled = false
+    NoclipEnabled = false,
+    PortraitEnabled = false
 }
 
-if CoreGui:FindFirstChild("DeltaFarmGui") then
-    CoreGui.DeltaFarmGui:Destroy()
-end
-
--- Settings
+if CoreGui:FindFirstChild("DeltaFarmGui") then CoreGui.DeltaFarmGui:Destroy() end
 Players.LocalPlayer.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam
+
+-- ==========================================
+-- GHOST & NOCLIP ENGINE
+-- ==========================================
+local function toggleNetwork(state)
+    pcall(function()
+        setfflag("NextGenReplicatorEnabledWrite4", tostring(state))
+    end)
+end
 
 RunService.Stepped:Connect(function()
     if Config.NoclipEnabled and Players.LocalPlayer.Character then
@@ -57,16 +58,13 @@ end)
 -- AUTOMATION THREADS
 -- ==========================================
 
--- 1. Adaptive Money Collector (Slots 1-100)
+-- 1. Adaptive Money Collector
 task.spawn(function()
-    local collectRemote = ReplicatedStorage:WaitForChild("RemoteEvents", 5):WaitForChild("CollectMoney", 5)
+    local remote = ReplicatedStorage:WaitForChild("RemoteEvents", 5):WaitForChild("CollectMoney", 5)
     while true do
         task.wait(Config.MoneyDelay)
-        if Config.AutoCollectMoney and collectRemote then
-            for i = 1, 100 do
-                collectRemote:FireServer("Slot" .. tostring(i))
-                if i % 10 == 0 then task.wait(0.1) end 
-            end
+        if Config.AutoCollectMoney and remote then
+            for i = 1, 100 do remote:FireServer("Slot"..i) if i%10==0 then task.wait(0.1) end end
         end
     end
 end)
@@ -75,29 +73,26 @@ end)
 task.spawn(function()
     while true do
         task.wait(0.1)
-        if Config.TsunamiDeleteEnabled then
-            local folder = workspace:FindFirstChild("ActiveTsunamis")
-            if folder then for _, v in pairs(folder:GetChildren()) do v:Destroy() end end
+        local f = workspace:FindFirstChild("ActiveTsunamis")
+        if f and Config.TsunamiDeleteEnabled then 
+            for _, v in pairs(f:GetChildren()) do v:Destroy() end 
         end
     end
 end)
 
 -- ==========================================
--- COMPACT GUI SETUP
+-- COMPACT SCROLLING GUI
 -- ==========================================
 local ScreenGui = Instance.new("ScreenGui", CoreGui)
 ScreenGui.Name = "DeltaFarmGui"
 
 local ToggleBtn = Instance.new("TextButton", ScreenGui)
-ToggleBtn.Size = UDim2.new(0, 45, 0, 45)
-ToggleBtn.Position = UDim2.new(0, 20, 0, 20)
-ToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 255, 120)
-ToggleBtn.Text = "MENU"
+ToggleBtn.Size = UDim2.new(0, 45, 0, 45); ToggleBtn.Position = UDim2.new(0, 20, 0, 20)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 255, 120); ToggleBtn.Text = "MENU"
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
 
 local MainFrame = Instance.new("Frame", ScreenGui)
-MainFrame.Size = UDim2.new(0, 220, 0, 280)
-MainFrame.Position = UDim2.new(0.5, -110, 0.4, -140)
+MainFrame.Size = UDim2.new(0, 210, 0, 280); MainFrame.Position = UDim2.new(0.5, -105, 0.4, -140)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 Instance.new("UICorner", MainFrame)
 Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(0, 255, 120)
@@ -105,71 +100,59 @@ Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(0, 255, 120)
 ToggleBtn.MouseButton1Click:Connect(function() MainFrame.Visible = not MainFrame.Visible end)
 
 local Scroll = Instance.new("ScrollingFrame", MainFrame)
-Scroll.Size = UDim2.new(1, -10, 1, -10)
-Scroll.Position = UDim2.new(0, 5, 0, 5)
-Scroll.BackgroundTransparency = 1
-Scroll.CanvasSize = UDim2.new(0, 0, 0, 400)
+Scroll.Size = UDim2.new(1, -10, 1, -10); Scroll.Position = UDim2.new(0, 5, 0, 5)
+Scroll.BackgroundTransparency = 1; Scroll.CanvasSize = UDim2.new(0, 0, 0, 450)
 Scroll.ScrollBarThickness = 2
-Scroll.ScrollBarImageColor3 = Color3.fromRGB(0, 255, 120)
 
 local Layout = Instance.new("UIListLayout", Scroll)
-Layout.Padding = UDim.new(0, 6)
-Layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+Layout.Padding = UDim.new(0, 6); Layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 local function CreateBtn(text, color)
     local b = Instance.new("TextButton", Scroll)
-    b.Size = UDim2.new(0.95, 0, 0, 35)
-    b.BackgroundColor3 = color
-    b.TextColor3 = Color3.new(1,1,1)
-    b.Text = text
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 11
-    Instance.new("UICorner", b)
-    return b
+    b.Size = UDim2.new(0.95, 0, 0, 35); b.BackgroundColor3 = color; b.TextColor3 = Color3.new(1,1,1)
+    b.Text = text; b.Font = Enum.Font.GothamBold; b.TextSize = 10
+    Instance.new("UICorner", b); return b
 end
 
-local Title = Instance.new("TextLabel", Scroll)
-Title.Size = UDim2.new(1, 0, 0, 20)
-Title.Text = "ULTIMATE FARM V27"
-Title.TextColor3 = Color3.fromRGB(0, 255, 120)
-Title.BackgroundTransparency = 1
-Title.Font = Enum.Font.GothamBold
-
 local SearchInput = Instance.new("TextBox", Scroll)
-SearchInput.Size = UDim2.new(0.95, 0, 0, 30)
-SearchInput.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-SearchInput.TextColor3 = Color3.new(1,1,1)
-SearchInput.Text = Config.SearchName
-SearchInput.PlaceholderText = "Target Name..."
+SearchInput.Size = UDim2.new(0.95, 0, 0, 30); SearchInput.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+SearchInput.TextColor3 = Color3.new(1,1,1); SearchInput.Text = Config.SearchName
 Instance.new("UICorner", SearchInput)
-
 SearchInput:GetPropertyChangedSignal("Text"):Connect(function() Config.SearchName = SearchInput.Text end)
 
 local MoneyInput = Instance.new("TextBox", Scroll)
-MoneyInput.Size = UDim2.new(0.95, 0, 0, 30)
-MoneyInput.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-MoneyInput.TextColor3 = Color3.new(1,1,1)
-MoneyInput.Text = "10"
-MoneyInput.PlaceholderText = "Money Delay (sec)"
+MoneyInput.Size = UDim2.new(0.95, 0, 0, 30); MoneyInput.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MoneyInput.TextColor3 = Color3.new(1,1,1); MoneyInput.Text = tostring(Config.MoneyDelay)
 Instance.new("UICorner", MoneyInput)
+MoneyInput:GetPropertyChangedSignal("Text"):Connect(function() local v = tonumber(MoneyInput.Text) if v then Config.MoneyDelay = v end end)
 
-MoneyInput:GetPropertyChangedSignal("Text"):Connect(function()
-    local val = tonumber(MoneyInput.Text)
-    if val then Config.MoneyDelay = math.clamp(val, 1, 60) end
-end)
-
+local RotateBtn = CreateBtn("AUTO ROTATE: OFF", Color3.fromRGB(50, 50, 50))
+local DesyncBtn = CreateBtn("GHOST MODE: OFF", Color3.fromRGB(50, 50, 50))
 local MoneyBtn = CreateBtn("AUTO MONEY: OFF", Color3.fromRGB(50, 50, 50))
 local TsunamiBtn = CreateBtn("DEL TSUNAMI: OFF", Color3.fromRGB(50, 50, 50))
 local AutoBtn = CreateBtn("START AUTO FARM", Color3.fromRGB(0, 150, 80))
 
 local Stats = Instance.new("TextLabel", Scroll)
-Stats.Size = UDim2.new(1, 0, 0, 20)
-Stats.Text = "Claims: 0 | AFK: ON"
-Stats.TextColor3 = Color3.new(0.7, 0.7, 0.7)
-Stats.BackgroundTransparency = 1
-Stats.TextSize = 10
+Stats.Size = UDim2.new(1, 0, 0, 20); Stats.TextColor3 = Color3.new(0.7, 0.7, 0.7); Stats.BackgroundTransparency = 1
+Stats.Text = "Claims: 0 | AFK: ON"; Stats.TextSize = 10
 
--- Toggles
+-- ==========================================
+-- TOGGLES
+-- ==========================================
+
+RotateBtn.MouseButton1Click:Connect(function()
+    Config.PortraitEnabled = not Config.PortraitEnabled
+    RotateBtn.Text = Config.PortraitEnabled and "AUTO ROTATE: SENSOR" or "AUTO ROTATE: OFF"
+    RotateBtn.BackgroundColor3 = Config.PortraitEnabled and Color3.fromRGB(0, 200, 255) or Color3.fromRGB(50, 50, 50)
+    Players.LocalPlayer.PlayerGui.ScreenOrientation = Config.PortraitEnabled and Enum.ScreenOrientation.Sensor or Enum.ScreenOrientation.LandscapeLeft
+end)
+
+DesyncBtn.MouseButton1Click:Connect(function()
+    Config.DesyncEnabled = not Config.DesyncEnabled
+    DesyncBtn.Text = Config.DesyncEnabled and "GHOST MODE: ON" or "GHOST MODE: OFF"
+    DesyncBtn.BackgroundColor3 = Config.DesyncEnabled and Color3.fromRGB(150, 0, 255) or Color3.fromRGB(50, 50, 50)
+end)
+
 MoneyBtn.MouseButton1Click:Connect(function()
     Config.AutoCollectMoney = not Config.AutoCollectMoney
     MoneyBtn.Text = Config.AutoCollectMoney and "AUTO MONEY: ON" or "AUTO MONEY: OFF"
@@ -180,11 +163,7 @@ TsunamiBtn.MouseButton1Click:Connect(function()
     Config.TsunamiDeleteEnabled = not Config.TsunamiDeleteEnabled
     TsunamiBtn.Text = Config.TsunamiDeleteEnabled and "DEL TSUNAMI: ON" or "DEL TSUNAMI: OFF"
     TsunamiBtn.BackgroundColor3 = Config.TsunamiDeleteEnabled and Color3.fromRGB(200, 0, 0) or Color3.fromRGB(50, 50, 50)
-end)
-
--- ==========================================
--- BRAINROT LOGIC (V15 Logic + Safety Filters)
--- ==========================================
+end
 
 local function forceEmptyHands()
     local char = Players.LocalPlayer.Character
@@ -197,29 +176,13 @@ local function forceEmptyHands()
     end
 end
 
--- THE FILTERED SEARCH
-local function findValidItem(name)
-    if not Config.BasePos then return nil end
-    
-    -- Recursive search through workspace
-    for _, item in pairs(workspace:GetDescendants()) do
-        if item.Name == name then
-            -- 1. Check if it's claimable (has prompt/touch)
-            local trigger = item:FindFirstChildOfClass("ProximityPrompt", true) or item:FindFirstChildOfClass("TouchTransmitter", true)
-            
-            if trigger then
-                -- 2. Check Distance (Ignore items within 60 studs of your Base)
-                local p = item:IsA("BasePart") and item or (item.PrimaryPart or item:FindFirstChildWhichIsA("BasePart"))
-                if p then
-                    local dist = (p.Position - Config.BasePos.Position).Magnitude
-                    if dist > 60 then
-                        return item -- Valid Spawn Found
-                    end
-                end
-            end
-        end
+local function findItem(name)
+    local folder = workspace:FindFirstChild("ActiveBrainrots", true)
+    if folder then
+        local secret = folder:FindFirstChild("Secret")
+        if secret then return secret:FindFirstChild(name) end
     end
-    return nil
+    return workspace:FindFirstChild(name, true)
 end
 
 local function aggressiveClaim(item, hrp)
@@ -249,40 +212,47 @@ AutoBtn.MouseButton1Click:Connect(function()
         AutoBtn.Text = "START AUTO FARM"
         AutoBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 80)
         Config.NoclipEnabled = false
+        toggleNetwork(true)
     end
 end)
 
 task.spawn(function()
     while true do
-        task.wait(Config.ScanDelay)
+        task.wait(0.5)
         if Config.AutoClaimEnabled then
             local hrp = Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             if not hrp or not Config.BasePos then continue end
 
-            -- 1. Watcher Anchor
+            -- Stay at Observation (Noclip On)
             Config.NoclipEnabled = true
             hrp.CFrame = Config.ObservationPoint
             
-            -- 2. Verified Scan
             local targetItem = nil
             repeat
                 task.wait(0.5)
                 if not Config.AutoClaimEnabled then break end
-                targetItem = findValidItem(Config.SearchName)
+                targetItem = findItem(Config.SearchName)
             until targetItem or not Config.AutoClaimEnabled
 
-            -- 3. Claim Process
             if targetItem and Config.AutoClaimEnabled then
                 local p = targetItem:IsA("BasePart") and targetItem or (targetItem.PrimaryPart or targetItem:FindFirstChildWhichIsA("BasePart"))
                 if p then
+                    -- GHOST START
+                    if Config.DesyncEnabled then toggleNetwork(false) end
+                    
                     hrp.CFrame = p.CFrame 
                     task.wait(0.2)
                     aggressiveClaim(targetItem, hrp)
                     task.wait(0.4)
                     
-                    -- 4. Return and Empty Hand
-                    Config.NoclipEnabled = false
+                    -- Return to Base (Noclip Off)
                     hrp.CFrame = Config.BasePos
+                    task.wait(0.2)
+                    
+                    -- GHOST END
+                    if Config.DesyncEnabled then toggleNetwork(true) end
+                    
+                    Config.NoclipEnabled = false
                     task.wait(0.5)
                     forceEmptyHands()
                     
