@@ -1,0 +1,178 @@
+-- Services
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
+local ProximityPromptService = game:GetService("ProximityPromptService")
+
+local LocalPlayer = Players.LocalPlayer
+local Config = {
+    MoneyGenActive = false,
+    AutoLockActive = false,
+    AutoCollectActive = false,
+    InstantInteract = false, 
+    MultiToolEnabled = false, 
+    GenSpeed = 50,
+    CollectDelay = 2,
+    StartTime = os.time(),
+    Running = true
+}
+
+-- Cleanup old GUI
+if CoreGui:FindFirstChild("FNAF_V15") then CoreGui.FNAF_V15:Destroy() end
+
+-- ==========================================
+-- DYNAMIC BASE DETECTION
+-- ==========================================
+local function getMyBase()
+    local baseFolder = workspace:FindFirstChild("Bases")
+    return baseFolder and baseFolder:FindFirstChild(LocalPlayer.Name)
+end
+
+-- ==========================================
+-- SMART LOCK CHECKER
+-- ==========================================
+local function isBaseCurrentlyLocked(lockPart)
+    local countdownLabel = lockPart:FindFirstChild("LockedForText", true) 
+        and lockPart.LockedForText:FindFirstChild("LockedText", true)
+        and lockPart.LockedForText.LockedText:FindFirstChild("CountDown", true)
+
+    if countdownLabel and countdownLabel:IsA("TextLabel") then
+        local text = countdownLabel.Text
+        local num = text:match("%d+")
+        if string.find(text, ":") or (num and tonumber(num) > 0) then
+            return true
+        end
+    end
+    if lockPart:IsA("BasePart") and (lockPart.Color.R > 0.7 and lockPart.Color.G < 0.3) then
+        return true
+    end
+    return false
+end
+
+-- ==========================================
+-- SELF-ESP
+-- ==========================================
+local MyHighlight = Instance.new("Highlight")
+MyHighlight.Name = "LocalGhostView"
+MyHighlight.FillColor = Color3.fromRGB(255, 100, 0)
+MyHighlight.FillTransparency = 0.5
+MyHighlight.Enabled = false
+
+-- ==========================================
+-- UI CONSTRUCTION (V15 FIXED)
+-- ==========================================
+local ScreenGui = Instance.new("ScreenGui", CoreGui); ScreenGui.Name = "FNAF_V15"
+
+-- FIXED DRAG LOGIC (Only triggers on specific object)
+local function makeDraggable(gui, dragHandle)
+    local dragging, dragStart, startPos
+    dragHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true; dragStart = input.Position; startPos = gui.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            gui.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
+-- MAIN FRAME
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 160, 0, 310)
+MainFrame.Position = UDim2.new(0.5, -80, 0.4, -155)
+MainFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 12)
+MainFrame.ZIndex = 5
+Instance.new("UICorner", MainFrame)
+local FrameStroke = Instance.new("UIStroke", MainFrame)
+FrameStroke.Color = Color3.fromRGB(255, 165, 0); FrameStroke.Thickness = 2
+
+-- TOP BAR (The only place you can drag)
+local TopBar = Instance.new("Frame", MainFrame)
+TopBar.Size = UDim2.new(1, 0, 0, 30); TopBar.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+Instance.new("UICorner", TopBar)
+makeDraggable(MainFrame, TopBar) -- DRAG HERE
+
+local Title = Instance.new("TextLabel", TopBar)
+Title.Size = UDim2.new(1, -60, 1, 0); Title.Position = UDim2.new(0, 10, 0, 0)
+Title.Text = "FNAF V15"; Title.TextColor3 = Color3.fromRGB(255, 165, 0); Title.Font = "GothamBold"; Title.TextSize = 11; Title.BackgroundTransparency = 1; Title.TextXAlignment = "Left"
+
+-- MINI BALL
+local MiniBtn = Instance.new("TextButton", ScreenGui); MiniBtn.Size = UDim2.new(0, 45, 0, 45); MiniBtn.Position = UDim2.new(0, 20, 0, 250); MiniBtn.BackgroundColor3 = Color3.fromRGB(255, 165, 0); MiniBtn.Text = "🐻"; MiniBtn.Visible = false; MiniBtn.ZIndex = 10; Instance.new("UICorner", MiniBtn).CornerRadius = UDim.new(1, 0); makeDraggable(MiniBtn, MiniBtn)
+
+-- Close / Minimize
+local MinBtn = Instance.new("TextButton", TopBar); MinBtn.Size = UDim2.new(0, 22, 0, 22); MinBtn.Position = UDim2.new(1, -50, 0, 4); MinBtn.Text = "-"; MinBtn.BackgroundColor3 = Color3.fromRGB(45,45,45); MinBtn.TextColor3 = Color3.new(1,1,1); Instance.new("UICorner", MinBtn)
+local CloseBtn = Instance.new("TextButton", TopBar); CloseBtn.Size = UDim2.new(0, 22, 0, 22); CloseBtn.Position = UDim2.new(1, -25, 0, 4); CloseBtn.Text = "X"; CloseBtn.BackgroundColor3 = Color3.fromRGB(150,0,0); CloseBtn.TextColor3 = Color3.new(1,1,1); Instance.new("UICorner", CloseBtn)
+
+local Content = Instance.new("Frame", MainFrame); Content.Size = UDim2.new(1, 0, 1, -35); Content.Position = UDim2.new(0, 0, 0, 35); Content.BackgroundTransparency = 1
+local Layout = Instance.new("UIListLayout", Content); Layout.Padding = UDim.new(0, 4); Layout.HorizontalAlignment = "Center"
+
+-- Buttons
+local function QuickBtn(text, color)
+    local b = Instance.new("TextButton", Content); b.Size = UDim2.new(0.9, 0, 0, 30); b.BackgroundColor3 = color; b.TextColor3 = Color3.new(1,1,1); b.Text = text; b.Font = "GothamBold"; b.TextSize = 9; Instance.new("UICorner", b)
+    return b
+end
+
+local LockBtn = QuickBtn("LOCK: OFF", Color3.fromRGB(40,40,40))
+local CollectBtn = QuickBtn("COLLECT: OFF", Color3.fromRGB(40,40,40))
+local InstantBtn = QuickBtn("INSTANT: OFF", Color3.fromRGB(40,40,40))
+local MultiBtn = QuickBtn("GHOST SLAP: OFF", Color3.fromRGB(40,40,40))
+local RotateBtn = QuickBtn("ROTATE: OFF", Color3.fromRGB(40,40,40))
+local GenBtn = QuickBtn("MONEY CHEAT: OFF", Color3.fromRGB(180, 40, 40))
+
+-- Setting Rows
+local function CreateSetting(label, default)
+    local row = Instance.new("Frame", Content); row.Size = UDim2.new(0.9, 0, 0, 20); row.BackgroundTransparency = 1; Instance.new("UIListLayout", row).FillDirection = "Horizontal"
+    local l = Instance.new("TextLabel", row); l.Size = UDim2.new(0.6,0,1,0); l.Text = label; l.TextColor3 = Color3.new(1,1,1); l.BackgroundTransparency = 1; l.Font = "Gotham"; l.TextSize = 8; l.TextXAlignment = "Right"
+    local i = Instance.new("TextBox", row); i.Size = UDim2.new(0.35,0,1,0); i.BackgroundColor3 = Color3.fromRGB(30,30,30); i.TextColor3 = Color3.new(1,1,1); i.Text = default; i.TextSize = 9; Instance.new("UICorner", i); return i
+end
+local SpeedInp = CreateSetting("MULTI:", "50")
+local DelayInp = CreateSetting("DELAY:", "2")
+
+-- ==========================================
+-- BUTTON CONNECTIONS (FIXED)
+-- ==========================================
+MinBtn.MouseButton1Click:Connect(function() MainFrame.Visible = false; MiniBtn.Visible = true; MiniBtn.Position = MainFrame.Position end)
+MiniBtn.MouseButton1Click:Connect(function() MiniBtn.Visible = false; MainFrame.Visible = true; MainFrame.Position = MiniBtn.Position end)
+CloseBtn.MouseButton1Click:Connect(function() Config.Running = false; ScreenGui:Destroy() end)
+
+LockBtn.MouseButton1Click:Connect(function() 
+    Config.AutoLockActive = not Config.AutoLockActive
+    LockBtn.Text = Config.AutoLockActive and "LOCK: ON" or "LOCK: OFF"
+    LockBtn.BackgroundColor3 = Config.AutoLockActive and Color3.fromRGB(200, 100, 0) or Color3.fromRGB(40,40,40)
+end)
+
+MultiBtn.MouseButton1Click:Connect(function() 
+    Config.MultiToolEnabled = not Config.MultiToolEnabled
+    MultiBtn.Text = Config.MultiToolEnabled and "GHOST SLAP: ON" or "GHOST SLAP: OFF"
+    MultiBtn.BackgroundColor3 = Config.MultiToolEnabled and Color3.fromRGB(100, 0, 255) or Color3.fromRGB(40,40,40)
+end)
+
+CollectBtn.MouseButton1Click:Connect(function() 
+    Config.AutoCollectActive = not Config.AutoCollectActive
+    CollectBtn.Text = Config.AutoCollectActive and "COLLECT: ON" or "COLLECT: OFF"
+    CollectBtn.BackgroundColor3 = Config.AutoCollectActive and Color3.fromRGB(0, 100, 200) or Color3.fromRGB(40,40,40)
+end)
+
+InstantBtn.MouseButton1Click:Connect(function() 
+    Config.InstantInteract = not Config.InstantInteract
+    InstantBtn.Text = Config.InstantInteract and "INSTANT: ON" or "INSTANT: OFF"
+    InstantBtn.BackgroundColor3 = Config.InstantInteract and Color3.fromRGB(0, 150, 100) or Color3.fromRGB(40,40,40)
+end)
+
+RotateBtn.MouseButton1Click:Connect(function() 
+    LocalPlayer.PlayerGui.ScreenOrientation = (LocalPlayer.PlayerGui.ScreenOrientation == Enum.ScreenOrientation.LandscapeLeft) and Enum.ScreenOrientation.Sensor or Enum.ScreenOrientation.LandscapeLeft
+    RotateBtn.Text = (LocalPlayer.PlayerGui.ScreenOrientation == Enum.ScreenOrientation.Sensor) and "SENSOR: ON" or "SENSOR: OFF"
+end)
+
+GenBtn.MouseButton1Click:Connect(function() 
+    Config.MoneyGenActive = not Config.MoneyGenActive
+    GenBtn.Text = Config.MoneyGenActive and "CHEAT: ON" or "CHEAT: OFF"
+    GenBtn.BackgroundColor3 = Config.MoneyGenActive and Color
